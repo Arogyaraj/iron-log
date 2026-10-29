@@ -3,6 +3,7 @@ import { S, emit } from "../store.js";
 import { $, download, toast } from "../ui.js";
 import { api } from "../api.js";
 import { applyData, localIso } from "../domain.js";
+import { LIBRARY } from "../exercises.js";
 
 export function openSettings() {
   $("setName").value = S.profile.name;
@@ -42,6 +43,12 @@ export function wire() {
     }
   });
 
+  $("importRoutines").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (file) await importRoutines(file);
+  });
+
   $("exportJson").addEventListener("click", () => {
     const data = { exported: new Date().toISOString(), profile: S.profile, routines: S.routines, workouts: S.workouts, weights: S.weights, exercises: S.exercises, measurements: S.measurements };
     download(`iron-log-backup-${localIso()}.json`, "application/json", JSON.stringify(data, null, 2));
@@ -76,4 +83,30 @@ export function wire() {
       toast(err.message);
     }
   });
+}
+
+/* Imports routines from an Iron Log routines file: { "format": "iron-log-routines", "routines": [...] }. */
+async function importRoutines(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    return toast("That file isn't valid JSON");
+  }
+  if (data?.format !== "iron-log-routines" || !Array.isArray(data.routines) || !data.routines.length) {
+    return toast("That isn't an Iron Log routines file");
+  }
+  const known = new Set(LIBRARY.map((e) => e.name.toLowerCase()));
+  let added = 0, unknown = 0;
+  try {
+    for (const r of data.routines) {
+      for (const ex of r.exercises || []) if (!known.has(String(ex.name).toLowerCase())) unknown++;
+      S.routines.push(await api("/api/routines", { method: "POST", body: { name: r.name, folder: r.folder || "", exercises: r.exercises || [] } }));
+      added++;
+    }
+  } catch (err) {
+    toast(`Stopped after ${added}: ${err.message}`);
+  }
+  if (added) toast(`Imported ${added} routine${added === 1 ? "" : "s"}${unknown ? `, ${unknown} exercise(s) not in the library` : ""}`);
+  emit();
 }
