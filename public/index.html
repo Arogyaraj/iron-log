@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Iron Log</title>
+<meta name="description" content="Log workouts, track records, and see your progress.">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Iron Log">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;600;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<script>
+/* Shows a visible message if the app script fails or takes too long, instead of a blank page. */
+window.__ilBooted = false;
+function ilBootError(msg) {
+  if (window.__ilBooted) return;
+  var l = document.getElementById("gLoading"), e = document.getElementById("gateErr");
+  if (l) l.innerHTML = '<div class="lock-ico">⚠️</div><h2>Couldn\'t start</h2><p class="muted">' + msg + '</p><button class="btn full" type="button" onclick="location.reload()">Reload</button>';
+}
+window.addEventListener("error", function (ev) { ilBootError("Script error: " + (ev.message || "unknown")); });
+setTimeout(function () { ilBootError("The app is taking too long to start. Check your connection and reload."); }, 12000);
+</script>
+
+</head>
+<body class="locked">
+
+<!-- Profile gate. Visible from the first paint, so the page is never blank. -->
+<section id="gate" class="lock" style="display:grid" aria-live="polite">
+  <div id="gLoading" class="lock-card card">
+    <div class="lock-ico">⏳</div>
+    <h2>Loading</h2>
+    <p class="muted">Connecting to Iron Log…</p>
+  </div>
+
+  <div id="gPick" class="lock-card card hide">
+    <div class="lock-ico">🏋️</div>
+    <h2>Iron Log</h2>
+    <p class="muted">Choose a profile. Each profile has its own training log and PIN.</p>
+    <div id="profileList" class="gate-list"></div>
+    <button class="btn full" id="newProfile" type="button">+ New profile</button>
+    <p class="muted hide" id="profileLimit"></p>
+    <button class="btn ghost full" id="gRetry" type="button">Refresh</button>
+  </div>
+  <form id="gPin" class="lock-card card hide">
+    <div class="lock-ico">🔒</div>
+    <h2 id="pinFor">Profile</h2>
+    <p class="muted">PINs are 4 to 8 digits.</p>
+    <input id="gPinInput" class="field pin-input" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" placeholder="••••" required>
+    <button class="btn full" id="gPinBtn" type="submit">Unlock</button>
+    <button class="btn ghost full" id="gBack" type="button">Back to profiles</button>
+  </form>
+
+  <form id="gCreate" class="lock-card card hide">
+    <div class="lock-ico">➕</div>
+    <h2>New profile</h2>
+    <label class="lbl" for="gcName">Name</label>
+    <input class="field" id="gcName" maxlength="40" required placeholder="Your name">
+    <label class="lbl" for="gcPin">PIN (4 to 8 digits)</label>
+    <input class="field pin-input" id="gcPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" required>
+    <label class="lbl" for="gcPin2">Repeat PIN</label>
+    <input class="field pin-input" id="gcPin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" required>
+    <label class="lbl hide" id="gCode" for="gcCode">Setup code</label>
+    <input class="field hide" id="gcCode" type="password" autocomplete="off" placeholder="Ask the app owner">
+    <button class="btn full" id="gcBtn" type="submit">Create profile</button>
+    <button class="btn ghost full" id="gCreateBack" type="button">Back</button>
+  </form>
+  <p class="lock-err" id="gateErr" role="alert"></p>
+</section>
+
+<div class="app hide" id="app">
+  <header class="top">
+    <button class="avatar" id="avatar" aria-label="Open settings" type="button">?</button>
+    <button class="who" id="who" aria-label="Open settings" type="button">
+      <span class="hello" id="hello">Hey,</span>
+      <h1 id="name">Athlete</h1>
+    </button>
+    <div class="top-actions">
+      <span class="sync" id="sync"></span>
+      <button class="pill-btn hide" id="installBtn" type="button">Install</button>
+      <button class="icon-btn" id="themeBtn" aria-label="Toggle light or dark" type="button">◐</button>
+      <button class="icon-btn" id="menuBtn" aria-label="Settings" type="button">⋯</button>
+    </div>
+  </header>
+
+  <!-- TODAY -->
+  <section class="view" id="view-today">
+    <section class="card hero">
+      <div class="hero-grid">
+        <div class="ring">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="track" cx="60" cy="60" r="52"/>
+            <circle class="fill" id="ringFill" cx="60" cy="60" r="52"/>
+          </svg>
+          <b id="ringPct">0</b>
+        </div>
+        <div class="hero-copy">
+          <p class="tag" id="tagline"></p>
+          <div class="stats">
+            <div><b id="tWeek">0</b><span>This week</span></div>
+            <div><b id="tVol">0</b><span>Volume</span></div>
+            <div><b id="tLast">—</b><span>Last session</span></div>
+          </div>
+        </div>
+      </div>
+      <button class="next hide" id="nextUp" type="button"></button>
+    </section>
+
+    <button class="resume hide" id="resume" type="button" data-view="train">
+      <span><span class="eyebrow">Workout in progress</span><strong id="resumeTxt"></strong></span>
+      <span class="mono">Resume →</span>
+    </button>
+
+    <div class="quick-actions">
+      <button class="btn" type="button" data-view="plan">Routines</button>
+      <button class="btn ghost" type="button" data-view="log">Calendar</button>
+    </div>
+
+    <h3 class="month">Recent</h3>
+    <div class="feed" id="recent"></div>
+  </section>
+
+  <!-- TRAIN -->
+  <section class="view hide" id="view-train">
+    <div id="sessWrap" class="hide">
+      <section class="card wk-head" id="sessHead"></section>
+      <div id="sessBody"></div>
+      <form class="quick" id="addExForm">
+        <input id="exName" list="exList" placeholder="Add an exercise…" maxlength="80" aria-label="Exercise name">
+        <datalist id="exList"></datalist>
+        <button class="btn" type="submit">Add</button>
+      </form>
+    </div>
+    <div id="pickWrap">
+      <h2 class="page-title">Train</h2>
+      <p class="muted page-sub">Start a routine, or log an empty workout and add exercises as you go.</p>
+      <div id="pickList"></div>
+      <button class="btn ghost full" id="startEmpty" type="button">+ Empty workout</button>
+    </div>
+  </section>
+
+  <!-- PLAN -->
+  <section class="view hide" id="view-plan">
+    <h2 class="page-title">Plan</h2>
+    <p class="muted page-sub">Routines, grouped into folders.</p>
+    <div class="plan-actions">
+      <button class="btn" id="newRoutine" type="button">+ New routine</button>
+      <button class="btn ghost hide" id="starterBtn" type="button">Starter programs</button>
+    </div>
+    <div id="routineList" class="routine-list"></div>
+  </section>
+
+  <!-- LOG -->
+  <section class="view hide" id="view-log">
+    <h2 class="page-title">Log</h2>
+    <p class="muted page-sub">Calendar, totals and every session.</p>
+    <div class="stat-grid" id="hStats"></div>
+
+    <h3 class="month">Calendar</h3>
+    <div class="card cal-card">
+      <div class="cal-nav">
+        <button class="icon-btn sm" id="calPrev" type="button" aria-label="Previous month">‹</button>
+        <strong id="calTitle" class="cal-title"></strong>
+        <button class="icon-btn sm" id="calNext" type="button" aria-label="Next month">›</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+    </div>
+
+    <h3 class="month">Volume, last 12 weeks</h3>
+    <div class="card chart-panel"><div class="mini-chart" id="vChart"></div></div>
+
+    <h3 class="month">Muscle split, last 4 weeks (sets)</h3>
+    <div class="card chart-panel" id="muscleSplit"></div>
+
+    <div class="month-row">
+      <h3 class="month" id="logTitle">All sessions</h3>
+      <button class="linkish hide" id="clearDay" type="button">Show all</button>
+    </div>
+    <div class="feed" id="hList"></div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section class="view hide" id="view-library">
+    <h2 class="page-title">Library</h2>
+    <p class="muted page-sub">Built-in and custom exercises. Tap one for records and history.</p>
+    <input class="search wide" id="libSearch" type="search" placeholder="Search exercises…" aria-label="Search exercises">
+    <div class="chips" id="libChips"></div>
+    <button class="btn ghost full" id="newCustom" type="button">+ Custom exercise</button>
+    <div class="feed" id="libList"></div>
+  </section>
+
+  <!-- BODY -->
+  <section class="view hide" id="view-body">
+    <h2 class="page-title">Body</h2>
+    <p class="muted page-sub">Bodyweight and measurements.</p>
+    <form class="quick" id="wForm">
+      <input id="wKg" type="number" step="0.1" min="0" inputmode="decimal" placeholder="Bodyweight" aria-label="Bodyweight">
+      <input id="wDate" type="date" aria-label="Date">
+      <button class="btn" type="submit">Log</button>
+    </form>
+    <div class="stat-grid" id="wStats"></div>
+    <h3 class="month">Last 14 weigh-ins</h3>
+    <div class="card chart-panel"><div class="mini-chart" id="wChart"></div></div>
+    <h3 class="month">Weigh-ins</h3>
+    <div class="feed" id="wList"></div>
+
+    <div class="month-row">
+      <h3 class="month">Measurements</h3>
+      <button class="linkish" id="addMeasure" type="button">+ Add</button>
+    </div>
+    <div id="mList"></div>
+  </section>
+</div>
+
+<!-- Rest timer -->
+<div class="rest hide" id="rest" role="timer">
+  <span class="rest-time" id="restTime">1:30</span>
+  <button type="button" id="restAdd">+30s</button>
+  <button type="button" id="restSkip">Skip</button>
+</div>
+
+<nav class="dock hide" id="dock" aria-label="Sections">
+  <button data-view="today" class="on" type="button"><span class="ico">🏠</span>Today</button>
+  <button data-view="train" type="button"><span class="ico">🏋️</span>Train</button>
+  <button data-view="plan" type="button"><span class="ico">📋</span>Plan</button>
+  <button data-view="log" type="button"><span class="ico">📖</span>Log</button>
+  <button data-view="library" type="button"><span class="ico">🔎</span>Library</button>
+  <button data-view="body" type="button"><span class="ico">⚖️</span>Body</button>
+</nav>
+
+<div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="toastBtn" class="hide" type="button"></button></div>
+
+<!-- Routine editor -->
+<dialog id="dlgRoutine">
+  <form id="routineForm" class="dlg-body">
+    <div class="dlg-head">
+      <h2 id="routineTitle">New routine</h2>
+      <button type="button" class="icon-btn sm" data-close="dlgRoutine" aria-label="Close">×</button>
+    </div>
+    <label class="lbl" for="routineName">Name</label>
+    <input class="field" id="routineName" maxlength="60" placeholder="Push day" required>
+    <label class="lbl" for="routineFolder">Folder</label>
+    <input class="field" id="routineFolder" maxlength="40" placeholder="Optional, e.g. Push Pull Legs" list="folderList">
+    <datalist id="folderList"></datalist>
+    <div class="rx-row rx-head mono"><span>Exercise</span><span>Sets</span><span>Reps</span><span>Rest s</span><span></span></div>
+    <div id="routineRows" class="rx-list"></div>
+    <button type="button" class="btn ghost full" id="rxAdd">+ Exercise</button>
+    <button class="btn full" type="submit">Save routine</button>
+  </form>
+</dialog>
+
+<!-- Session details (history) -->
+<dialog id="dlgWorkout">
+  <div class="dlg-body">
+    <div class="dlg-head">
+      <div><p class="eyebrow" id="woMeta"></p><h2 id="woTitle"></h2></div>
+      <button type="button" class="icon-btn sm" data-close="dlgWorkout" aria-label="Close">×</button>
+    </div>
+    <div id="woBody"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn full" id="woEdit">Edit session</button>
+      <button type="button" class="btn ghost full" id="woRepeat">Repeat workout</button>
+      <button type="button" class="btn ghost full" id="woRoutine">Save as routine</button>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn ghost danger-text" id="woDelete">Delete session</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Post-workout summary -->
+<dialog id="dlgSummary">
+  <div class="dlg-body">
+    <div class="dlg-head">
+      <div><p class="eyebrow" id="sumMeta"></p><h2 id="sumTitle">Workout</h2></div>
+      <button type="button" class="icon-btn sm" data-close="dlgSummary" aria-label="Close">×</button>
+    </div>
+    <div class="stat-grid" id="sumStats"></div>
+    <h3 class="month">Records</h3>
+    <div class="feed" id="sumPrs"></div>
+    <h3 class="month">Exercises</h3>
+    <div id="sumExercises"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn full" id="sumShare">Share summary</button>
+      <button type="button" class="btn ghost full" id="sumSaveRoutine">Save as routine</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Per-exercise options during a session -->
+<dialog id="dlgExOpts">
+  <form id="exoForm" class="dlg-body">
+    <div class="dlg-head">
+      <h2 id="exoTitle">Exercise</h2>
+      <button type="button" class="icon-btn sm" data-close="dlgExOpts" aria-label="Close">×</button>
+    </div>
+    <label class="lbl" for="exoName">Exercise</label>
+    <input class="field" id="exoName" list="exList" maxlength="80">
+    <label class="lbl" for="exoNote">Note</label>
+    <textarea class="field" id="exoNote" rows="2" maxlength="300" placeholder="Setup, cues, how it felt"></textarea>
+    <label class="lbl" for="exoRest">Rest between sets (seconds, blank = default)</label>
+    <input class="field" id="exoRest" type="number" min="0" max="900">
+    <label class="lbl" for="exoSuperset">Superset group</label>
+    <select class="field" id="exoSuperset">
+      <option value="">None</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+    </select>
+    <button class="btn full" type="submit">Save</button>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="exoUp">Move up</button>
+      <button type="button" class="btn ghost" id="exoDown">Move down</button>
+    </div>
+    <button type="button" class="btn ghost danger-text full" id="exoDelete">Remove exercise</button>
+  </form>
+</dialog>
+
+<!-- Library exercise detail -->
+<dialog id="dlgEx">
+  <div class="dlg-body">
+    <div class="dlg-head">
+      <div><p class="eyebrow" id="exMeta"></p><h2 id="exTitle"></h2></div>
+      <button type="button" class="icon-btn sm" data-close="dlgEx" aria-label="Close">×</button>
+    </div>
+    <h3 class="month">Records</h3>
+    <div class="stat-grid" id="exRecords"></div>
+    <h3 class="month" id="exChartLabel">Progress</h3>
+    <div class="card chart-panel"><div class="mini-chart" id="exChart"></div></div>
+    <h3 class="month">History</h3>
+    <div class="feed" id="exHistory"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost full hide" id="exEdit">Edit exercise</button>
+      <button type="button" class="btn ghost full danger-text hide" id="exDelete">Delete exercise</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Custom exercise -->
+<dialog id="dlgCustom">
+  <form id="customForm" class="dlg-body">
+    <div class="dlg-head">
+      <h2 id="customTitle">Custom exercise</h2>
+      <button type="button" class="icon-btn sm" data-close="dlgCustom" aria-label="Close">×</button>
+    </div>
+    <label class="lbl" for="customName">Name</label>
+    <input class="field" id="customName" maxlength="80" required>
+    <label class="lbl" for="customMuscle">Muscle group</label>
+    <select class="field" id="customMuscle"></select>
+    <label class="lbl" for="customKind">Tracked as</label>
+    <select class="field" id="customKind">
+      <option value="weight">Weight & reps</option>
+      <option value="bodyweight">Bodyweight reps</option>
+      <option value="time">Time</option>
+    </select>
+    <button class="btn full" type="submit">Save exercise</button>
+  </form>
+</dialog>
+
+<!-- Body measurements -->
+<dialog id="dlgMeasure">
+  <form id="measureForm" class="dlg-body">
+    <div class="dlg-head">
+      <h2>Measurements</h2>
+      <button type="button" class="icon-btn sm" data-close="dlgMeasure" aria-label="Close">×</button>
+    </div>
+    <label class="lbl" for="measureDate">Date</label>
+    <input class="field" id="measureDate" type="date">
+    <div id="measureRows" class="meas-list"></div>
+    <button class="btn full" type="submit">Save measurements</button>
+  </form>
+</dialog>
+
+<!-- Settings and data -->
+<dialog id="dlgSettings">
+  <form id="settingsForm" class="dlg-body">
+    <div class="dlg-head">
+      <h2>Settings</h2>
+      <button type="button" class="icon-btn sm" data-close="dlgSettings" aria-label="Close">×</button>
+    </div>
+    <label class="lbl" for="setName">Name</label>
+    <input class="field" id="setName" maxlength="60">
+    <label class="lbl" for="setGoal">Sessions per week goal</label>
+    <input class="field" id="setGoal" type="number" min="1" max="14">
+    <label class="lbl" for="setUnits">Units</label>
+    <select class="field" id="setUnits"><option value="kg">Kilograms (kg)</option><option value="lb">Pounds (lb)</option></select>
+    <label class="lbl" for="setRest">Default rest (seconds)</label>
+    <input class="field" id="setRest" type="number" min="15" max="600">
+    <label class="check-row"><input type="checkbox" id="setKeepAwake"> Keep screen awake during workouts</label>
+    <label class="check-row"><input type="checkbox" id="setRpe"> Show RPE column</label>
+    <label class="check-row"><input type="checkbox" id="setWarmups"> Count warm-up sets in stats</label>
+    <button class="btn full" type="submit">Save settings</button>
+
+    <h3 class="month">Profile</h3>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="exportJson">Export backup (JSON)</button>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn ghost" id="switchProfile">Switch profile</button>
+      <button type="button" class="btn ghost danger-text" id="deleteProfile">Delete profile</button>
+      <button type="button" class="btn ghost danger-text" id="settingsErase">Erase this profile's training data</button>
+    </div>
+  </form>
+</dialog>
+
+<noscript><p style="padding:24px">Iron Log needs JavaScript. Enable it and reload.</p></noscript>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
